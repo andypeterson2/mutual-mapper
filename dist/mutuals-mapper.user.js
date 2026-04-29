@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         mutuals-mapper
 // @namespace    https://github.com/andypeterson2/mutual-mapper
-// @version      0.1.3
+// @version      0.1.4
 // @description  Map your X/Twitter mutuals network entirely in the browser
 // @author       Andy Peterson
 // @match        https://x.com/*
@@ -631,6 +631,10 @@ class GraphQLClient {
     this._fetch = fetcher;
     this._cookieSource = cookieSource;
     this._perf = perf;
+    // Tracks which op-names we've already logged in this session so a long
+    // crawl doesn't spam the console — one line per op tells the diagnostic
+    // story (which hash, scraped-live vs baked-in default).
+    this._loggedOps = new Set();
   }
 
   _headers() {
@@ -646,6 +650,12 @@ class GraphQLClient {
 
   async _gqlGet(opName, variables, features, { signal } = {}) {
     const hashes = currentHashes(this._perf);
+    if (!this._loggedOps.has(opName)) {
+      this._loggedOps.add(opName);
+      const live = discoverOpHashesFromPerformance(this._perf);
+      const source = live[opName] ? "live" : "default";
+      console.log(`[mutuals-mapper] op=${opName} hash=${hashes[opName]} source=${source}`);
+    }
     const url = _buildUrl(hashes, opName, variables, features);
     let resp;
     try {

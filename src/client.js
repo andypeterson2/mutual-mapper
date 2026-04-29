@@ -10,7 +10,7 @@
 // Errors are remapped into typed shapes: AuthError, RateLimitError,
 // TransientClientError, ClientError. Mirrors the Python version.
 
-import { currentHashes, BEARER } from "./op_hashes.js";
+import { currentHashes, discoverOpHashesFromPerformance, BEARER } from "./op_hashes.js";
 
 // Page size for Following/Followers pagination. x.com's cap is ~20-50; 20
 // matches what the web client itself uses, so we look identical to a normal
@@ -160,6 +160,10 @@ export class GraphQLClient {
     this._fetch = fetcher;
     this._cookieSource = cookieSource;
     this._perf = perf;
+    // Tracks which op-names we've already logged in this session so a long
+    // crawl doesn't spam the console — one line per op tells the diagnostic
+    // story (which hash, scraped-live vs baked-in default).
+    this._loggedOps = new Set();
   }
 
   _headers() {
@@ -175,6 +179,12 @@ export class GraphQLClient {
 
   async _gqlGet(opName, variables, features, { signal } = {}) {
     const hashes = currentHashes(this._perf);
+    if (!this._loggedOps.has(opName)) {
+      this._loggedOps.add(opName);
+      const live = discoverOpHashesFromPerformance(this._perf);
+      const source = live[opName] ? "live" : "default";
+      console.log(`[mutuals-mapper] op=${opName} hash=${hashes[opName]} source=${source}`);
+    }
     const url = _buildUrl(hashes, opName, variables, features);
     let resp;
     try {
