@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         mutuals-mapper
 // @namespace    https://github.com/andypeterson2/mutual-mapper
-// @version      0.1.5
+// @version      0.1.6
 // @description  Map your X/Twitter mutuals network entirely in the browser
 // @author       Andy Peterson
 // @match        https://x.com/*

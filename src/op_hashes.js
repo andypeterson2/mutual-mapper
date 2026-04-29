@@ -19,13 +19,15 @@ export const BEARER =
 
 export const BASE_URL = "https://x.com";
 
-// Known-good hashes (mirrored from twscrape v0.17). Update these manually OR
-// rely on `discoverOpHashes` to scrape current values from the live page.
+// Known-good hashes (last confirmed against live x.com — see git log for the
+// observation date). Update these manually when x.com rotates them; the
+// runtime scrape in `discoverOpHashesFromPerformance` should also pick up
+// fresh values when the user has visited a page that fires the relevant op.
 export const DEFAULT_HASHES = {
   UserByRestId: "WJ7rCtezBVT6nk6VM5R8Bw",
   UserByScreenName: "1VOOyvKkiI3FMmkeDNxM9A",
-  Following: "C1qZ6bs-L3oc_TKSZyxkXQ",
-  Followers: "Elc_-qTARceHpztqhI9PQA",
+  Following: "lQxnNSmlJkQHod0yzbVYDg",
+  Followers: "xOdl9jiaOqwHUm68qsq6Hg",
 };
 
 const GQL_PATH_RE = /\/i\/api\/graphql\/([A-Za-z0-9_-]+)\/([A-Za-z0-9]+)/;
