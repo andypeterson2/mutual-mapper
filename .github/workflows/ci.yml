@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Tests (node --test)
+        run: npm test
+      - name: Build dist
+        run: npm run build
+      - name: Confirm dist syntax
+        run: node --check dist/mutuals-mapper.user.js
+      - name: Upload built userscript
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutuals-mapper.user.js
+          path: dist/mutuals-mapper.user.js
+          if-no-files-found: error

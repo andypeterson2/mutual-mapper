@@ -1,0 +1,9 @@
+.*
+!.gitignore
+!.gitattributes
+!.github/
+!.nvmrc
+
+node_modules/
+*.log
+.DS_Store
