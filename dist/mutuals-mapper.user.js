@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         mutuals-mapper
 // @namespace    https://github.com/andypeterson2/mutual-mapper
-// @version      0.1.4
+// @version      0.1.5
 // @description  Map your X/Twitter mutuals network entirely in the browser
 // @author       Andy Peterson
 // @match        https://x.com/*
@@ -626,14 +626,17 @@ class GraphQLClient {
     fetcher = globalThis.fetch?.bind(globalThis),
     cookieSource = () => globalThis.document?.cookie ?? "",
     perf = globalThis.performance,
+    log = () => {},
   } = {}) {
     if (!fetcher) throw new Error("fetch is not available in this environment");
     this._fetch = fetcher;
     this._cookieSource = cookieSource;
     this._perf = perf;
-    // Tracks which op-names we've already logged in this session so a long
-    // crawl doesn't spam the console — one line per op tells the diagnostic
-    // story (which hash, scraped-live vs baked-in default).
+    // Logger callback — wired to the overlay's appendLog in production so
+    // diagnostic lines surface in the panel + persisted log, not the console.
+    this._log = log;
+    // One log line per op-name per session, not per request: a long crawl
+    // would otherwise paint the same line thousands of times.
     this._loggedOps = new Set();
   }
 
@@ -650,11 +653,12 @@ class GraphQLClient {
 
   async _gqlGet(opName, variables, features, { signal } = {}) {
     const hashes = currentHashes(this._perf);
+    const live = discoverOpHashesFromPerformance(this._perf);
+    const source = live[opName] ? "live" : "default";
+    const hash = hashes[opName];
     if (!this._loggedOps.has(opName)) {
       this._loggedOps.add(opName);
-      const live = discoverOpHashesFromPerformance(this._perf);
-      const source = live[opName] ? "live" : "default";
-      console.log(`[mutuals-mapper] op=${opName} hash=${hashes[opName]} source=${source}`);
+      this._log(`[op] ${opName} hash=${hash} source=${source}`);
     }
     const url = _buildUrl(hashes, opName, variables, features);
     let resp;
@@ -671,6 +675,7 @@ class GraphQLClient {
       throw new TransientClientError(`network: ${e.message ?? e}`);
     }
     if (!resp.ok) {
+      this._log(`[op] ${opName} HTTP ${resp.status} hash=${hash} source=${source}`);
       const body = await resp.text().catch(() => "");
       const mapped = _remap(resp.status, body);
       if (mapped) throw mapped;
@@ -1532,14 +1537,16 @@ const FETCH_FOLLOW_LIST_HARD_CAP = 50000;
 
 const state = makeInitialState();
 
-function appendLog(line) {
+function appendLog(line, { persist = true } = {}) {
   appendLogLine(state, line);
   render();
   // Fire-and-forget durable write. We don't await: a 17h crawl shouldn't
   // block on log persistence, and a one-off IndexedDB write failure is fine.
-  if (state.db) {
+  // `persist: false` is used by the failure paths below so we don't recurse
+  // forever if the write itself is what's broken.
+  if (state.db && persist) {
     appendLogEntry(state.db, line).catch((e) =>
-      console.warn("[mutuals-mapper] log persist failed:", e),
+      appendLog(`(log persist failed: ${e?.message ?? e})`, { persist: false }),
     );
   }
 }
@@ -1713,7 +1720,12 @@ async function withTask(fn) {
         appendLog("Cancelled by user");
       } else {
         state.phase = "error"; state.err = `${e.name ?? "Error"}: ${e.message ?? e}`;
-        appendLog(`ERROR: ${state.err}`); console.error(e);
+        appendLog(`ERROR: ${state.err}`);
+        if (e?.stack) {
+          for (const sl of String(e.stack).split("\n").slice(0, 6)) {
+            appendLog(`  ${sl.trim()}`);
+          }
+        }
       }
     } finally {
       state.task = null; state.abortCtrl = null; render(); refreshSeed();
@@ -1897,13 +1909,16 @@ async function hydrateLogTail() {
       render();
     }
   } catch (e) {
-    console.warn("[mutuals-mapper] failed to load persisted logs:", e);
+    appendLog(
+      `(failed to load persisted logs: ${e?.message ?? e})`,
+      { persist: false },
+    );
   }
 }
 
 async function init() {
   state.db = await openDb();
-  state.client = new GraphQLClient();
+  state.client = new GraphQLClient({ log: appendLog });
 
   const launcher = document.createElement("button");
   launcher.id = "mm-launcher";

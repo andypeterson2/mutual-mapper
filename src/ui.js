@@ -40,14 +40,16 @@ const FETCH_FOLLOW_LIST_HARD_CAP = 50000;
 
 const state = makeInitialState();
 
-function appendLog(line) {
+function appendLog(line, { persist = true } = {}) {
   appendLogLine(state, line);
   render();
   // Fire-and-forget durable write. We don't await: a 17h crawl shouldn't
   // block on log persistence, and a one-off IndexedDB write failure is fine.
-  if (state.db) {
+  // `persist: false` is used by the failure paths below so we don't recurse
+  // forever if the write itself is what's broken.
+  if (state.db && persist) {
     appendLogEntry(state.db, line).catch((e) =>
-      console.warn("[mutuals-mapper] log persist failed:", e),
+      appendLog(`(log persist failed: ${e?.message ?? e})`, { persist: false }),
     );
   }
 }
@@ -221,7 +223,12 @@ async function withTask(fn) {
         appendLog("Cancelled by user");
       } else {
         state.phase = "error"; state.err = `${e.name ?? "Error"}: ${e.message ?? e}`;
-        appendLog(`ERROR: ${state.err}`); console.error(e);
+        appendLog(`ERROR: ${state.err}`);
+        if (e?.stack) {
+          for (const sl of String(e.stack).split("\n").slice(0, 6)) {
+            appendLog(`  ${sl.trim()}`);
+          }
+        }
       }
     } finally {
       state.task = null; state.abortCtrl = null; render(); refreshSeed();
@@ -405,13 +412,16 @@ async function hydrateLogTail() {
       render();
     }
   } catch (e) {
-    console.warn("[mutuals-mapper] failed to load persisted logs:", e);
+    appendLog(
+      `(failed to load persisted logs: ${e?.message ?? e})`,
+      { persist: false },
+    );
   }
 }
 
 export async function init() {
   state.db = await openDb();
-  state.client = new GraphQLClient();
+  state.client = new GraphQLClient({ log: appendLog });
 
   const launcher = document.createElement("button");
   launcher.id = "mm-launcher";

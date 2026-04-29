@@ -155,14 +155,17 @@ export class GraphQLClient {
     fetcher = globalThis.fetch?.bind(globalThis),
     cookieSource = () => globalThis.document?.cookie ?? "",
     perf = globalThis.performance,
+    log = () => {},
   } = {}) {
     if (!fetcher) throw new Error("fetch is not available in this environment");
     this._fetch = fetcher;
     this._cookieSource = cookieSource;
     this._perf = perf;
-    // Tracks which op-names we've already logged in this session so a long
-    // crawl doesn't spam the console — one line per op tells the diagnostic
-    // story (which hash, scraped-live vs baked-in default).
+    // Logger callback — wired to the overlay's appendLog in production so
+    // diagnostic lines surface in the panel + persisted log, not the console.
+    this._log = log;
+    // One log line per op-name per session, not per request: a long crawl
+    // would otherwise paint the same line thousands of times.
     this._loggedOps = new Set();
   }
 
@@ -179,11 +182,12 @@ export class GraphQLClient {
 
   async _gqlGet(opName, variables, features, { signal } = {}) {
     const hashes = currentHashes(this._perf);
+    const live = discoverOpHashesFromPerformance(this._perf);
+    const source = live[opName] ? "live" : "default";
+    const hash = hashes[opName];
     if (!this._loggedOps.has(opName)) {
       this._loggedOps.add(opName);
-      const live = discoverOpHashesFromPerformance(this._perf);
-      const source = live[opName] ? "live" : "default";
-      console.log(`[mutuals-mapper] op=${opName} hash=${hashes[opName]} source=${source}`);
+      this._log(`[op] ${opName} hash=${hash} source=${source}`);
     }
     const url = _buildUrl(hashes, opName, variables, features);
     let resp;
@@ -200,6 +204,7 @@ export class GraphQLClient {
       throw new TransientClientError(`network: ${e.message ?? e}`);
     }
     if (!resp.ok) {
+      this._log(`[op] ${opName} HTTP ${resp.status} hash=${hash} source=${source}`);
       const body = await resp.text().catch(() => "");
       const mapped = _remap(resp.status, body);
       if (mapped) throw mapped;
